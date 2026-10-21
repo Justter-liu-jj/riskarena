@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+# 锦标赛产物按克隆各自生成,不入库
+results/
+leaderboard.json
+# 本地实验语料(无许可证数据不入库 —— 见 CHARTER.md 语料纪律)
+data/corpus/local-*.jsonl
