@@ -1,9 +1,10 @@
-# vendored from slider-captcha-lab (原型仓库)@2026-10;除本行与 import 调整外未改动 —— 原理说明见原型 README
+# vendored from slider-captcha-lab (原型仓库)@2026-10;除本行、import 调整、
+# reset_rep() 附加与 2026-10 措辞修正(见 rep_touch_and_check)外未改动
 """环境指纹层 —— 风控第三层:不只看"做了什么",还看"用什么做的"。
 
 真实系统的这一层采 Canvas/WebGL 指纹、插件列表、UA 一致性、自动化痕迹
-(navigator.webdriver、headless 特征),并按设备 ID 累积跨请求信誉
-(见 references.md 的厂商采集字段清单)。本靶场实现一个教学版:
+(navigator.webdriver、headless 特征),并按设备 ID 累积跨请求信誉。
+本靶场实现一个教学版:
 
   1. webdriver / 自动化标记检查
   2. UA vs platform 一致性
@@ -44,9 +45,10 @@ def fp_id(fp):
 def rep_touch_and_check(fpid, now=None):
     """记录一次验证,并判断是否超频。返回 (超频?, 窗口内次数)。
 
-    已知教学点(2026-10 审计确认):fp_id 由客户端可控的 canvas_hash 派生,
-    每次请求随机化它即可完全绕开本频控 —— 这正是"没有跨设备关联图"的真实含义,
-    见 README 教学简化清单。"""
+    防守方加固结论(2026-10 审查定稿):本层的频控键 fp_id 派生自客户端
+    可控的字段(canvas_hash),而客户端字段皆可伪造 —— **缺少跨设备
+    关联图(多请求聚类、IP/账号图)时,单靠指纹频控不构成可靠防线**。
+    生产实现应把频控键锚定在服务端可验证的信号上,客户端指纹只作辅助。"""
     global _rep_calls
     now = time.time() if now is None else now
     q = _REP[fpid]

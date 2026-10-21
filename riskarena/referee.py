@@ -13,12 +13,14 @@
   对实现了 use_ticket 的防线,自动跑:重放已用票据 / 伪造签名 / 格式攻击,
   任何一条本应被拒却放行的探针记为 HOLE。
 """
+import copy
 import json
 import random
 import time
 import uuid
 
 from .metrics import SpecimenReport, TournamentReport
+from .spec import Defense
 
 RESULTS_FILE_DEFAULT = "results/history.jsonl"
 LEADERBOARD_FILE_DEFAULT = "leaderboard.json"
@@ -27,24 +29,56 @@ LEADERBOARD_FILE_DEFAULT = "leaderboard.json"
 # ---------------------------------------------------------------- 锦标赛
 
 def run_tournament(defense, specimens, trials=200, seed=2026):
-    """跑一遍 防 × 标本 矩阵,返回 TournamentReport。"""
+    """跑一遍 防 × 标本 矩阵,返回 TournamentReport。
+
+    裁判纪律(2026-10 设计审查后定型):
+      * solved 由 defense.check_solved 独立复核(实现了才启用);裁判计分
+        只认复核值,与 Verdict.solved 的矛盾计入 integrity —— 否则
+        "凡 blocked 一律报 solved=False"一句话就能把误伤率刷成 0。
+      * 标本拿到的是 challenge 的深拷贝 + 每试次独立的 rng 实例 ——
+        篡改靶点、污染全场随机流都到不了 evaluate。
+      * 逐试次异常隔离:标本异常跳过该试次(不计 n),防线异常记
+        def_error(等价于没拦住)—— 一个必抛异常的第三方模块炸不掉整场。
+    """
     rng = random.Random(seed)
+    defense.seed(seed)                       # 挑战生成进入可复现轨道
     rep = TournamentReport(defense=defense.name, defense_version=defense.version,
                            trials_per_specimen=trials, seed=seed)
+    rep.verified_solved = type(defense).check_solved is not Defense.check_solved
     for spec in specimens:
         sr = SpecimenReport(name=spec.name, intent=spec.intent, author=spec.author,
                             whitebox=getattr(spec, "whitebox", False))
         layer_ok = {}
         scores = []
         for _ in range(trials):
-            defense.reset_session()            # 每试次 = 独立访客(见 spec.reset_session)
+            trial_rng = random.Random(rng.getrandbits(64))   # 每试次独立随机流
+            defense.reset_session()          # 每试次 = 独立访客(见 spec.reset_session)
             challenge = defense.new_challenge()
-            submission = spec.build(challenge, rng)
-            verdict = defense.evaluate(challenge, submission)
+            try:
+                submission = spec.build(copy.deepcopy(challenge), trial_rng)
+            except Exception:
+                sr.errors += 1               # 标本自己的锅,不计入 n
+                continue
             sr.n += 1
+            try:
+                verdict = defense.evaluate(challenge, submission)
+            except Exception:
+                sr.def_errors += 1           # 防线判不动 = 没拦住,计入 n 拉低 catch
+                continue
+
+            solved_eff = verdict.solved
+            if rep.verified_solved:
+                try:
+                    gt = defense.check_solved(challenge, submission)
+                except Exception:
+                    gt = None
+                if gt is not None:
+                    solved_eff = bool(gt)
+                    if verdict.solved is not None and bool(verdict.solved) != solved_eff:
+                        sr.solved_mismatch += 1     # 防线自报与几何事实矛盾
             if verdict.blocked:
                 sr.blocked += 1
-            if verdict.solved:
+            if solved_eff:
                 sr.solved += 1
                 if verdict.blocked:
                     sr.accused += 1        # 完成了任务还被拦:真人=误伤,机器人=深捕获
@@ -139,7 +173,9 @@ def run_protocol_suite(defense):
     out = {}
     if not defense.supports_protocol():
         return {"protocol": "unsupported —— 防线未实现 use_ticket,协议层不计分"}
+    defense.reset_session()                        # 探针不继承锦标赛残留的时间域状态
     for name, fn in PROBES:
+        defense.reset_session()                    # 探针之间同样互不继承
         try:
             out[name] = fn(defense)
         except Exception as e:                     # 探针自身故障不掩盖防线问题
@@ -151,7 +187,13 @@ def run_protocol_suite(defense):
 # ---------------------------------------------------------------- 榜单持久化
 
 def save_report(rep, results_file=RESULTS_FILE_DEFAULT, leaderboard_file=LEADERBOARD_FILE_DEFAULT):
-    """把一场锦标赛写进 results/history.jsonl,并刷新 leaderboard.json。"""
+    """把一场锦标赛写进 results/history.jsonl,并刷新 leaderboard.json。
+
+    榜单纪律(2026-10 审查后生效,不再是死代码):
+      disqualified(human_solved_rate < 0.5)的防线沉底;
+      无人类标本的报告 rankable=False,同样沉底 —— 没有误伤率,
+      utility 就没有意义。
+    """
     import os
     entry = rep.summary()
     entry["recorded_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -168,15 +210,33 @@ def save_report(rep, results_file=RESULTS_FILE_DEFAULT, leaderboard_file=LEADERB
                     board = json.load(f)
             except Exception:
                 pass
+        board["updated_at"] = entry["recorded_at"]
+        # 同名防线按名字(不带版本)替代旧条目 —— 版本升级是覆盖,不是并存
+        my_name = entry["defense"].split("@")[0]
         entries = [e for e in board.get("entries", [])
-                   if e.get("defense") != entry["defense"]]
+                   if e.get("defense", "").split("@")[0] != my_name]
         entries.append({"defense": entry["defense"],
                         "utility": entry["utility"],
                         "catch_rate": entry["catch_rate"],
+                        "deep_catch_rate": entry["deep_catch_rate"],
                         "fp_rate": entry["fp_rate"],
+                        "human_solved_rate": entry["human_solved_rate"],
+                        "rankable": entry["rankable"],
+                        "disqualified": entry["disqualified"],
+                        "verified_solved": entry["verified_solved"],
+                        "solved_mismatches": entry["solved_mismatches"],
+                        "corpus": entry["corpus"],
                         "protocol": entry["protocol"],
                         "recorded_at": entry["recorded_at"]})
-        entries.sort(key=lambda e: -e["utility"])
+
+        def _rank_key(e):
+            if not e.get("rankable", True):
+                return (2, 0, 0.0)
+            if e.get("disqualified"):
+                return (1, 0, 0.0)
+            return (0, 0, -e["utility"])
+
+        entries.sort(key=_rank_key)
         board["entries"] = entries
         with open(leaderboard_file, "w", encoding="utf-8") as f:
             json.dump(board, f, ensure_ascii=False, indent=2)

@@ -4,6 +4,9 @@
 
 一场锦标赛 = 一条防线 × 一组标本 × trials 次(默认 200)× 固定 seed(默认 2026)。
 裁判:`python -m riskarena tournament`。
+可复现性:防线实现 `seed(s)` 后,挑战抽样与标本随机流都由 `--seed` 决定
+—— 未实现 seed 的防线,报告里的 seed 字段按"假可复现"对待。
+标本每试次拿到的 rng 是独立实例、challenge 是深拷贝(见 spec.py)。
 
 ## 指标定义(唯一口径,来自 riskarena/metrics.py)
 
@@ -19,9 +22,33 @@
 | utility | catch_rate − 3.0 × fp_rate | λ=3:咬真人 ≈ 放过 3 次机器 |
 
 - **HUMAN_SOLVE_FLOOR = 0.5**:human_solved_rate < 0.5 的防线 disqualified,
-  沉底并标注 —— 把挑战做得连真人都完不成,不配拿 catch 分。
+  榜单**沉底并标注** —— 把挑战做得连真人都完不成,不配拿 catch 分。
+  这是强制执行(写入与排序),不是建议。
+- **rankable**:报告中必须同时存在 bot 与 human 意图标本且各有 ≥1 条有效
+  试次,否则 rankable=False、不参与排名 —— 没有误伤率,utility 无意义
+  ("零真人阵容 utility=1.0"是审查抓到的刷分洞)。
+- **verified_solved / solved_mismatches**:防线实现了 `check_solved` 时,
+  裁判逐试次独立复核 solved 并计分只认复核值;自报与几何事实的矛盾次数
+  写进榜单。未实现的防线标 `verified_solved=False`,评审会追问原因。
+- **意图标签**:必须是精确的 `"bot"`/`"human"`(metrics 宏平均只认这两串);
+  语料里标签不合法的行跳过并告警,绝不静默归桶。标本意图造假 = 逐出
+  (CHARTER 红线 4), intents 与实际行为不符由评审代码检查把守。
 - λ=3 的量级依据:放过一个机器人 ≈ 一次廉价重试;咬伤一个真人 ≈ 一次流失。
   商用风控普遍把两者估为 3~10 倍价差。改 λ = 改规则,需 maintainer 提案。
+
+## 语料证据分级
+
+fp_rate 的证据强度取决于人类语料的可核实性:
+
+| 等级 | 定义 | 当前状态 |
+|---|---|---|
+| synthetic | 合成生成器(防线作者可自造,自证循环) | human-sim / sloppy-sim |
+| **purported-human** | 自称真人、不可核实、无伦理记录 | corpus-human·1050(ningning,MIT) |
+| verified-human | 有采集方法、人数、设备构成与知情同意记录 | **暂缺 —— 求贡献** |
+
+榜单条目的 `corpus` 字段必须写明等级。**只有 verified-human 语料上的
+fp_rate 才能作为防线可用性的最终结论**;purported-human 的数字是体检
+信号,不是判决书。
 
 ## 时间域层
 

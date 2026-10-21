@@ -26,6 +26,9 @@ class SpecimenReport:
     blocked: int = 0
     solved: int = 0
     accused: int = 0                 # solved 且仍被拦 —— "完成了任务还被当贼"(真人误伤的真定义)
+    errors: int = 0                  # 标本侧异常(build 抛错)—— 不计入 n
+    def_errors: int = 0              # 防线侧异常(evaluate 抛错)—— 记一次未拦截
+    solved_mismatch: int = 0         # 裁判独立复核与防线自报 solved 的矛盾次数
     avg_score: float = 0.0
     layer_pass: dict = field(default_factory=dict)   # 每层通过率,给防守方定位用
 
@@ -56,6 +59,20 @@ class TournamentReport:
     specimens: list = field(default_factory=list)     # [SpecimenReport]
     protocol: dict = field(default_factory=dict)      # 协议探针结果
     lambda_: float = LAMBDA_DEFAULT
+    verified_solved: bool = False    # 裁判是否用 check_solved 独立复核了 solved
+
+    @property
+    def has_human(self):
+        return any(s.intent == "human" and s.n for s in self.specimens)
+
+    @property
+    def has_bot(self):
+        return any(s.intent == "bot" and s.n for s in self.specimens)
+
+    @property
+    def rankable(self):
+        """没有人类标本就没有误伤率,utility 无意义 —— 不予排名。"""
+        return self.has_human and self.has_bot
 
     @property
     def catch_rate(self):
@@ -92,10 +109,14 @@ class TournamentReport:
         return any(s.author == "public-corpus" for s in self.specimens)
 
     def summary(self):
+        mismatches = sum(s.solved_mismatch for s in self.specimens)
         return {
             "defense": f"{self.defense}@{self.defense_version}",
             "trial_semantics": "reset-per-trial (i.i.d. visitors; 时间域层不计分,见 league-rules)",
-            "corpus": "ningning-slider-track-model (MIT)" if self._has_corpus() else "synthetic-only",
+            "corpus": "purported-human (ningning-slider-track-model, MIT, n=1050)" if self._has_corpus() else "synthetic-only",
+            "verified_solved": self.verified_solved,
+            "solved_mismatches": mismatches,
+            "rankable": self.rankable,
             "catch_rate": round(self.catch_rate, 4),
             "deep_catch_rate": round(self.deep_catch_rate, 4),
             "fp_rate": round(self.fp_rate, 4),
@@ -112,6 +133,8 @@ class TournamentReport:
                  "blocked_rate": round(s.blocked_rate, 4),
                  "solved_rate": round(s.solved_rate, 4),
                  "accused_rate": round(s.accused_rate, 4),
+                 "errors": s.errors, "def_errors": s.def_errors,
+                 "solved_mismatch": s.solved_mismatch,
                  "avg_score": round(s.avg_score, 3),
                  "layer_pass": {k: round(v, 4) for k, v in s.layer_pass.items()}}
                 for s in self.specimens

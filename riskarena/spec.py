@@ -73,6 +73,28 @@ class Defense:
         """("ok"|"replay"|"expired"|"invalid", msg)。不实现则探针跳过。"""
         raise NotImplementedError
 
+    # ---- 可选诚信能力:裁判用它独立复核 solved(防"自报 solved 刷指标")
+    def check_solved(self, challenge: Challenge, submission: Submission):
+        """只凭 challenge 明文 payload 与 submission 独立判定"任务是否完成"。
+
+        为什么必须有:solved 若完全由防线的 Verdict 自报,accused/fp_rate/
+        human_solved_rate/disqualified/deep_catch 全部握在被评价方手里 ——
+        "凡 blocked 一律报 solved=False"一句话就能把误伤率刷成 0(2026-10
+        设计审查发现)。实现它,裁判就会用本方法的结果计分,并把与
+        Verdict.solved 的矛盾记入榜单 integrity 字段。返回 None = 不提供,
+        裁判退回自报值并在 summary 里标注 verified_solved=false。
+        """
+        return None
+
+    # ---- 可复现性:裁判在锦标赛开始时调用
+    def seed(self, s: int) -> None:
+        """让挑战生成进入可复现轨道(--seed 才是真 seed)。
+
+        不实现的话 new_challenge 走全局随机 —— 报告里的 seed 字段就成了
+        假的可复现性(2026-10 设计审查发现)。基类默认 no-op。
+        """
+        return None
+
     # ---- 锦标赛语义:裁判在每个试次前调用
     def reset_session(self) -> None:
         """清空时间域状态(频控窗口、会话信誉等)。
@@ -107,10 +129,16 @@ class Specimen:
 
 
 class ReplaySpecimen(Specimen):
-    """语料回放标本:把冻结的人类轨迹语料平移对齐到挑战缺口后提交。
+    """语料回放标本:把冻结语料轨迹经回放手术后对准挑战缺口提交。
 
-    平移(不改速度/时长/抖动)是对真实语料最少的手术;场景包可提供更聪明的
-    适配器,但任何变换都必须在 specimen 的 docstring 里如实声明。
+    traces 的元素可以是:
+      - 裸轨迹 [[t,x,y],...](手术只按 gap 对齐/缩放)
+      - 语料记录 {"pts": [...], "target_distance": px, ...}
+        (给了 target_distance 就能做"靶点锚定"的保真手术:
+         把原挑战的靶点映射到 gap,松手误差按比例保留 —— 详见
+         corpora.align_translation 的 docstring)
+
+    任何变换都必须在 specimen 的 docstring 里如实声明。
     """
     def __init__(self, name, traces, fingerprint=None, author="corpus"):
         self.name = name
@@ -121,6 +149,12 @@ class ReplaySpecimen(Specimen):
 
     def build(self, challenge, rng):
         from .corpora import align_translation
-        pts = rng.choice(self._traces)
+        rec = rng.choice(self._traces)
+        if isinstance(rec, dict):
+            pts = rec["pts"]
+            target = rec.get("target_distance")
+        else:
+            pts, target = rec, None
         gap = challenge.payload.get("gap_x")
-        return Submission(samples=align_translation(pts, gap), fingerprint=self._fp)
+        return Submission(samples=align_translation(pts, gap, target),
+                          fingerprint=self._fp)

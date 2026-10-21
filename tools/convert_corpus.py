@@ -1,7 +1,10 @@
 """把公开真人滑块轨迹数据集转成 riskarena 语料格式(JSONL)。
 
 当前支持:
-  ningning  NingNing0111/slider-track-model(MIT 许可,1053 条真人滑块拖拽)
+  ningning  NingNing0111/slider-track-model(MIT 许可,1050 条滑块拖拽,
+            证据等级 purported-human —— 上游是 WGAN-GP 轨迹生成器项目,
+            本数据为其真人采集训练集,"真人"标注不可核实,完整披露见
+            data/corpus/PROVENANCE.md)
             格式: {"targetDistance": px, "points": [{"x","y","t"},...]}
             x = 起点为 0 的累计位移, t = 按下起的相对毫秒, ~60Hz 采样
             来源: https://github.com/NingNing0111/slider-track-model

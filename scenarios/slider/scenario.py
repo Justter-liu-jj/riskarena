@@ -28,25 +28,45 @@ GAP_MIN, GAP_MAX = 200, WIDTH - PIECE - 20
 
 class SliderDefense(Defense):
     name = "slider-v3"
-    version = "3.1.0"
+    version = "3.2.0"
 
     def __init__(self):
         self._open = {}                     # challenge_id -> gap_x(一次性)
+        self._rng = random.Random(0)        # seed() 会重播种(见下)
         scoremodel.get_model()              # 启动时训练(固定种子,权重稳定)
+
+    def seed(self, s):
+        """裁判在锦标赛开始时调用 —— 否则 --seed 管不住挑战抽样(假可复现)。"""
+        self._rng = random.Random(s)
 
     # -- 场景面
     def new_challenge(self):
         cid = uuid.uuid4().hex
-        gap = random.randint(GAP_MIN, GAP_MAX)
+        gap = self._rng.randint(GAP_MIN, GAP_MAX)
         self._open[cid] = gap
         return Challenge(kind="slider", challenge_id=cid,
                          payload={"gap_x": gap, "width": WIDTH, "height": HEIGHT,
                                   "piece": PIECE, "tolerance": TOLERANCE})
 
+    def check_solved(self, challenge, submission):
+        """几何复核:终点落在缺口容差内即 solved。只凭明文,不经防线内部 ——
+        裁判靠它独立复核 Verdict.solved(防自报刷指标)。"""
+        samples = submission.samples if isinstance(submission.samples, list) else None
+        gap = challenge.payload.get("gap_x")
+        tol = challenge.payload.get("tolerance", TOLERANCE)
+        if not samples or gap is None:
+            return False
+        try:
+            return abs(float(samples[-1][1]) - float(gap)) <= float(tol)
+        except (TypeError, ValueError, IndexError):
+            return False
+
     def evaluate(self, challenge, submission):
         gap = self._open.pop(challenge.challenge_id, None)   # 协议层:challenge 一次性
         if gap is None:
-            return Verdict(blocked=True, solved=False, note="challenge 不存在或已使用")
+            return Verdict(blocked=True, solved=False,
+                           layers={"protocol": {"ok": False}},
+                           note="challenge 不存在或已使用")
         samples = submission.samples if isinstance(submission.samples, list) else []
         try:
             res = detector.analyze(samples, gap_x=gap, tolerance=TOLERANCE, profile="v2")
@@ -55,13 +75,16 @@ class SliderDefense(Defense):
                      if res["metrics"] else
                      {"p": 0.0, "score": 1, "is_model": False})
         except Exception:
-            return Verdict(blocked=True, solved=False, note="轨迹数据无法解析")
+            return Verdict(blocked=True, solved=False,
+                           layers={"protocol": {"ok": True}},
+                           note="轨迹数据无法解析")
 
         blocked = not (res["solved"] is True and res["is_human"]
                        and model["is_model"] and env["ok"])
         verdict = Verdict(blocked=blocked, solved=res["solved"],
                           score=model["score"],
-                          layers={"rules": {"ok": res["is_human"]},
+                          layers={"protocol": {"ok": True},
+                                  "rules": {"ok": res["is_human"]},
                                   "model": {"ok": model["is_model"], "score": model["score"]},
                                   "env": {"ok": env["ok"]}},
                           reasons=[r for r in res["reasons"] if not r.get("ok")]
@@ -88,7 +111,7 @@ class SliderDefense(Defense):
         from . import generator
         return Submission(
             samples=generator.gen_human(challenge.payload["gap_x"],
-                                        random.randrange(1 << 30)),
+                                        self._rng.randrange(1 << 30)),
             fingerprint=fingerprint.profile_for("human"))
 
 
@@ -118,10 +141,52 @@ class GeneratorSpecimen(Specimen):
                                                               else self.mode))
 
 
+class SlowDragFpBot(Specimen):
+    """慢速匀速拖拽 + 完整指纹(bot)—— 首位贡献者标本(2026-10 冷启动测试产出)。
+
+    策略:35~60px/s 极慢匀速主体 + 终点瞄准修正 + 字段完整一致的指纹。
+    对 slider-v3 的实测:全过(0% 拦截,模型平均 6.00)。机制:
+      1. 匀速主体本应被规则层 peak_speed_ratio≥1.4 拦下,但终点瞄准修正的
+         一步 ~3px/16.7ms(≈170px/s)"松手拽动"把峰均比抬进钟形曲线;
+      2. 模型层把"极慢"(≈Fitts 下限 30 倍)判成满分真人 —— 训练集里
+         慢=人类。规则层要的钟形速度曲线,被一次 3px 的松手动作满足。
+    黑盒:只消费 challenge.payload 明文;指纹硬编码,不 import 任何场景模块。
+    """
+    name = "slow-drag-fp"
+    intent = "bot"
+    author = "first-contributor"
+    whitebox = False
+
+    FINGERPRINT = {
+        "webdriver": False, "plugins": 5, "languages": "zh-CN,zh",
+        "platform": "Win32",
+        "ua": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"),
+        "screen": "1920x1080", "timezone": "Asia/Shanghai",
+        "canvas_hash": -27182818,
+    }
+
+    def build(self, challenge, rng):
+        gap = float(challenge.payload["gap_x"])
+        tol = float(challenge.payload.get("tolerance", 6))
+        speed = rng.uniform(35.0, 60.0)            # px/s,人类速度分布的慢尾
+        step_ms = 16.7                             # rAF 节奏;匀速 = 每步等距
+        pts = [[0.0, 0.0, 0.0]]
+        t = x = 0.0
+        while x < gap - 0.5:
+            t += step_ms
+            x = min(x + speed * step_ms / 1000.0, gap)
+            pts.append([t, x, rng.gauss(0, 0.6)])
+        err = max(-tol + 1.0, min(tol - 1.0, rng.gauss(0, 1.0)))
+        pts.append([t + step_ms, gap + err, pts[-1][2] + rng.gauss(0, 0.3)])
+        return Submission(samples=pts, fingerprint=dict(self.FINGERPRINT))
+
+
 BUILTIN_SPECIMENS = [
     GeneratorSpecimen("rookie", intent="bot", name="rookie"),
     GeneratorSpecimen("pro", intent="bot", name="pro"),
     GeneratorSpecimen("sneaky", intent="bot", name="sneaky"),
+    SlowDragFpBot(),
     GeneratorSpecimen("human", intent="human", name="human-sim"),
     GeneratorSpecimen("sloppy", intent="human", name="sloppy-sim"),
 ]
