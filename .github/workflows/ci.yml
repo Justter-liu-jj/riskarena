@@ -13,8 +13,10 @@ jobs:
       - name: 基线锦标赛可复现
         run: python -m riskarena tournament --trials 50
       - name: 语料真人体检(误伤率必须可得)
-        run: python -c "
+        run: |
+          python -c "
           from riskarena.corpora import load_corpus;
           r = load_corpus('data/corpus/converted.jsonl');
           assert len(r) >= 1000, f'corpus too small: {len(r)}';
-          print('corpus ok:', len(r))"
+          print('corpus ok:', len(r))
+          "
