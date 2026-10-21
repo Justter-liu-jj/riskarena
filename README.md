@@ -1,8 +1,27 @@
+<p align="center">
+  <img src="docs/banner.svg" width="840" alt="RiskArena —— 攻防分离的开源风控竞技场">
+</p>
+
 # RiskArena —— 开放的风控攻防竞技场
 
 **An open, adversarial benchmark for bot-detection / risk-control defenses.**
 
+[![ci](https://github.com/Justter-liu-jj/riskarena/actions/workflows/ci.yml/badge.svg)](https://github.com/Justter-liu-jj/riskarena/actions/workflows/ci.yml)
+![python](https://img.shields.io/badge/python-3.8%2B-blue)
+![deps](https://img.shields.io/badge/dependencies-0-success)
+![license](https://img.shields.io/badge/license-Apache--2.0-green)
+
 > 你的防线的误伤率,不该由你自己写的机器人来打分。
+
+## 三步打榜(30 秒上手)
+
+1. **跑基线** —— `python -m riskarena tournament --trials 200`(纯标准库,零依赖)
+2. **挑赛道** —— 防线:`scenarios/<你的场景>/` 实现 `Defense` 子类;标本:建 `specimens/` 目录
+   放一个 `Specimen` 文件(CLI 自动发现,该目录不入库)
+3. **提 PR** —— 附一次完整锦标赛输出;评审清单在 [CONTRIBUTING.md](CONTRIBUTING.md),
+   红线在 [CHARTER.md](CHARTER.md)
+
+跑不通算文档 bug —— 开 issue 贴报错,我们修文档而不是让你猜。
 
 ---
 
@@ -11,7 +30,7 @@
 风控(验证码、反自动化)研究有个老毛病:**防线和测试它的机器人是同一批人**。
 自己训的模型,拿自己写的生成器一测,捕获率 99% —— 然后真实世界一来,
 要么咬伤一半真人,要么被一段 0.15px 的亚像素噪声整个绕过
-(我们在姊妹项目 [slider-captcha-lab](../slider-captcha-lab) 里把这条循环论证
+(我们在姊妹教学靶场 slider-captcha-lab —— 本地项目,尚未开源 —— 里把这条循环论证
 亲手踩了一遍:同一个人写的防线和标本,pro 型标本通过率 100%,utility 满分,
 自我感觉良好)。
 

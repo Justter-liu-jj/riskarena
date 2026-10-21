@@ -6,3 +6,5 @@ results/
 leaderboard.json
 # 本地实验语料(无许可证数据不入库 —— 见 CHARTER.md 语料纪律)
 data/corpus/local-*.jsonl
+# 本地试验标本不入库(CONTRIBUTING.md 赛道 B);合并入库由维护者移入 scenarios/
+specimens/

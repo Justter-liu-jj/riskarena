@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220" role="img">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f17"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="220" rx="14" fill="url(#bg)"/>
+  <rect x="0" y="206" width="960" height="14" rx="7" fill="url(#accent)"/>
+
+  <!-- 图标:盾牌 + 竞技场环 -->
+  <path d="M110 42 L158 60 V104 C158 142 136 163 110 176 C84 163 62 142 62 104 V60 Z"
+        fill="none" stroke="url(#accent)" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="110" cy="108" r="30" fill="none" stroke="#6366f1" stroke-width="4" opacity="0.9"/>
+  <circle cx="110" cy="108" r="14" fill="none" stroke="#22d3ee" stroke-width="4"/>
+
+  <text x="212" y="102" font-family="Segoe UI, PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif"
+        font-size="64" font-weight="700" fill="#f5f8ff">RiskArena</text>
+  <text x="214" y="150" font-family="Segoe UI, PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif"
+        font-size="24" fill="#9aa4b2">攻防分离的开源风控竞技场 · 防循环论证基准</text>
+  <text x="214" y="184" font-family="Segoe UI, PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif"
+        font-size="17" fill="#64748b">An open, adversarial benchmark for bot detection &amp; risk control</text>
+</svg>
